@@ -1,122 +1,94 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as ts from 'typescript';
-
-function createProgramAndGetTypeChecker(context: ts.TransformationContext) {
-  const compilerOptions = context.getCompilerOptions();
-  const rootDir = compilerOptions.rootDir || '.';
-  // Create a TypeScript program with the transformed source files
-  const program = ts.createProgram({
-    options: compilerOptions,
-    rootNames: [rootDir],
-  });
-
-  // Get the TypeChecker from the program
-  const typeChecker = program.getTypeChecker();
-
-  return { program, typeChecker };
-}
-
-// Function to find the class where the method belongs
-function findClassForMethod(
-  methodNode: ts.MethodDeclaration,
-): ts.ClassDeclaration | undefined {
-  let parent: ts.Node = methodNode.parent;
-  while (parent) {
-    if (ts.isClassDeclaration(parent)) {
-      return parent; // Found the class
-    }
-    parent = parent.parent; // Keep looking up the tree
-  }
-  return undefined; // No class found (in case it's not part of a class)
-}
+import {
+  findClassForMethod,
+  createProgramAndGetTypeChecker,
+  traverseImportFactoryBuilder,
+  MapEx,
+} from './helpers';
+import { registerReferencedExtensions } from './helpers/register-referenced-extensions';
 
 export function before() {
+  const extensions = new MapEx<
+    ts.SourceFile,
+    MapEx<ts.Type, MapEx<string, ts.Identifier>>
+  >();
+  const sources = new MapEx<string, Set<ts.SourceFile>>();
+  const sourceNameMap = new Map<string, ts.SourceFile>();
   return (context: ts.TransformationContext) => {
-    const { typeChecker } = createProgramAndGetTypeChecker(context);
-    const extensions = new Map<
-      ts.SourceFile,
-      Map<ts.Type, Map<string, ts.Identifier>>
-    >();
-    return (rootNode: ts.SourceFile) => {
-      const registerExtensions: ts.Visitor = (node: ts.Node): ts.Node => {
+    const tsRef = createProgramAndGetTypeChecker(context);
+    const { traverseImportFactory } = traverseImportFactoryBuilder(
+      extensions,
+      sources,
+      tsRef,
+    );
+
+    return function transformExtensionRefs(rootNode: ts.SourceFile) {
+      const { getExtensionCall, traverseImport } = traverseImportFactory(
+        rootNode,
+        sourceNameMap,
+      );
+
+      /**
+       * Traverse function to register every extension the
+       * declared
+       * @param node The node to be analyzed
+       */
+      function registerExtensions(node: ts.Node): ts.Node {
         const visitNext = () =>
           ts.visitEachChild(node, registerExtensions, context);
+        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+          const visited = visitNext();
+          registerReferencedExtensions(sources, node, rootNode, tsRef);
+          return visited;
+        }
         const decorators = ts.canHaveDecorators(node)
           ? ts.getDecorators(node)
           : undefined;
         // Handle method declarations with the @ExtensionMethod decorator
-        if (!ts.isMethodDeclaration(node) || !decorators?.length) {
-          return visitNext();
-        }
+        if (!ts.isMethodDeclaration(node)) return visitNext();
         // Check for the @ExtensionMethod decorator
-        const extensionDecorator = decorators.find(
+        const extensionDecorator = decorators?.find(
           (decorator) => decorator.getText() === '@ExtensionMethod',
         );
+        const first = node.parameters[0];
+        const type = first
+          ? tsRef.typeChecker.getTypeAtLocation(first)
+          : undefined;
+        const cls = findClassForMethod(node);
 
-        if (!extensionDecorator) return visitNext();
-        // Ensure the method is static and has 'this' parameter for the extension type
         if (
+          !extensionDecorator ||
           !node.parameters.length ||
           !node.modifiers?.some(
             (mod) => mod.kind === ts.SyntaxKind.StaticKeyword,
-          )
+          ) ||
+          !type ||
+          !cls?.name
         ) {
           return visitNext();
         }
-        const first = node.parameters[0];
-        if (!first) return visitNext();
-        const type = typeChecker.getTypeAtLocation(first);
-        if (!type) return visitNext();
-        let sourceMap = extensions.get(rootNode);
-        if (!sourceMap) {
-          sourceMap = new Map();
-          extensions.set(rootNode, sourceMap);
-        }
-        let extensionMethods = sourceMap.get(type);
-        if (!extensionMethods) {
-          extensionMethods = new Map();
-          sourceMap.set(type, extensionMethods);
-        }
-        const cls = findClassForMethod(node);
-        if (!cls?.name) return visitNext();
-        extensionMethods.set(node.name.getText(), cls.name);
+        extensions
+          .getOrSet(rootNode, () => new MapEx())
+          .getOrSet(type, () => new MapEx())
+          .set(node.name.getText(), cls.name);
+        sources.getOrSet(rootNode.fileName, () => new Set()).add(rootNode);
+        sourceNameMap.set(rootNode.fileName, rootNode);
         return ts.visitEachChild(node, registerExtensions, context);
-      };
+      }
 
-      const transformExtensions: ts.Visitor = (node: ts.Node): ts.Node => {
+      /**
+       * Traverse function the replace every extension import
+       * and every extension method call to static call reference
+       * @param node the node to be analyzed
+       */
+      function transformExtensions(node: ts.Node): ts.Node {
         const visitNext = () =>
           ts.visitEachChild(node, transformExtensions, context);
+        if (ts.isImportDeclaration(node)) return traverseImport(node);
         if (!ts.isCallExpression(node)) return visitNext();
-        const { expression, arguments: args } = node;
-        if (!ts.isPropertyAccessExpression(expression)) return visitNext();
-        const targetInstance = expression.expression;
-        const methodName = expression.name.getText();
-        if (!targetInstance || !methodName) return visitNext();
-        const extensionList = extensions.get(rootNode);
-        if (!extensionList) return visitNext();
-        const type = typeChecker.getTypeAtLocation(targetInstance);
-        if (!type) return visitNext();
-        let extension = extensionList.get(type)?.get(methodName);
-        if (!extension) {
-          for (const [key, value] of extensionList.entries()) {
-            if (typeChecker.isTypeAssignableTo(type, key)) {
-              extension = value.get(methodName);
-              if (extension) break;
-            }
-          }
-        }
-        if (!extension) return visitNext();
-
-        // Create the transformed call: MyExtensionClass.myExtensionMethod(myInstance)
-        return ts.factory.createCallExpression(
-          ts.factory.createPropertyAccessExpression(
-            extension,
-            ts.factory.createIdentifier(methodName),
-          ),
-          undefined,
-          [targetInstance, ...args],
-        );
-      };
+        return getExtensionCall(node) ?? visitNext();
+      }
 
       ts.visitNode(rootNode, registerExtensions);
 

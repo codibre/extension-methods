@@ -19,8 +19,10 @@ class StringExtensions {
   }
 }
 
-interface String {
-  size(): number;
+declare global {
+  interface String {
+    size(): number;
+  }
 }
 
 'my-string'.size();
@@ -35,7 +37,7 @@ Also, this library works with two modes:
 
 Each of them are explained below and you can use the one that fits you better!
 
-# AST Transformer mode
+# AST Transformer mode (experimental)
 
 In this mode, everything is done at transpiling time, making you able to access each of the extensions methods just by importing them where you need, like this:
 
