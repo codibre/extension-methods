@@ -1,4 +1,4 @@
-import { before } from './emitter';
+import { before } from './before';
 
 export const name = 'extension-methods';
 export const version = 1;

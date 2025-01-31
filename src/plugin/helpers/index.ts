@@ -1,6 +1,7 @@
 export * from './create-import-as-declaration';
 export * from './create-program-nd-get-type-checker';
 export * from './find-class-for-method';
+export * from './get-extension-elements';
 export * from './get-extension-from-map';
 export * from './get-extensions';
 export * from './get-import-file-names';

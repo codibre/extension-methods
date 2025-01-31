@@ -70,23 +70,29 @@ export function traverseImportFactoryBuilder(
       if (!ts.isPropertyAccessExpression(expression)) return undefined;
       const targetInstance = expression.expression;
       const methodName = expression.name.getText();
-      if (!targetInstance || !methodName) return undefined;
+      const type = tsRef.typeChecker.getTypeAtLocation(targetInstance);
+      if (
+        !targetInstance ||
+        !methodName ||
+        !type ||
+        type.getProperty(methodName)
+      ) {
+        return undefined;
+      }
       for (const { extensionList, identifier } of getExtensions(
         sources,
         extensions,
         rootNode,
         importRefs,
       )) {
-        const type = tsRef.typeChecker.getTypeAtLocation(targetInstance);
-        const extension = type
-          ? (extensionList.get(type)?.get(methodName) ??
-            getExtensionFromMap(
-              tsRef.typeChecker,
-              extensionList,
-              methodName,
-              type,
-            ))
-          : undefined;
+        const extension =
+          extensionList.get(type)?.get(methodName) ??
+          getExtensionFromMap(
+            tsRef.typeChecker,
+            extensionList,
+            methodName,
+            type,
+          );
         // Create the transformed call: MyExtensionClass.myExtensionMethod(myInstance)
         if (extension) {
           return getStaticCall(

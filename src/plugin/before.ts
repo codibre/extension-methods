@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as ts from 'typescript';
 import {
-  findClassForMethod,
   createProgramAndGetTypeChecker,
+  getExtensionElements,
   traverseImportFactoryBuilder,
   MapEx,
 } from './helpers';
@@ -42,36 +42,24 @@ export function before() {
           registerReferencedExtensions(sources, node, rootNode, tsRef);
           return visited;
         }
-        const decorators = ts.canHaveDecorators(node)
-          ? ts.getDecorators(node)
-          : undefined;
         // Handle method declarations with the @ExtensionMethod decorator
         if (!ts.isMethodDeclaration(node)) return visitNext();
-        // Check for the @ExtensionMethod decorator
-        const extensionDecorator = decorators?.find(
-          (decorator) => decorator.getText() === '@ExtensionMethod',
-        );
-        const first = node.parameters[0];
-        const type = first
-          ? tsRef.typeChecker.getTypeAtLocation(first)
-          : undefined;
-        const cls = findClassForMethod(node);
+        const info = getExtensionElements(node, tsRef.typeChecker);
 
         if (
-          !extensionDecorator ||
+          !info ||
           !node.parameters.length ||
           !node.modifiers?.some(
             (mod) => mod.kind === ts.SyntaxKind.StaticKeyword,
-          ) ||
-          !type ||
-          !cls?.name
+          )
         ) {
           return visitNext();
         }
+        const { type, cls } = info;
         extensions
           .getOrSet(rootNode, () => new MapEx())
           .getOrSet(type, () => new MapEx())
-          .set(node.name.getText(), cls.name);
+          .set(node.name.getText(), cls.name as ts.Identifier);
         sources.getOrSet(rootNode.fileName, () => new Set()).add(rootNode);
         sourceNameMap.set(rootNode.fileName, rootNode);
         return ts.visitEachChild(node, registerExtensions, context);
