@@ -7,7 +7,61 @@
 
 # extension-methods
 
-With this library, you can create 'proxy references' for your objects and access many methods that actually doesn't exists in them!
+This library brings to Typescript a really useful functionality that other languages already have, like C# or Kotlin: extension methods!
+
+Extension methods are a way to declare static methods that are aeasily referenced in specific types through the dot notation, like if they belong to a class itself! Let me give you a example:
+
+```typescript
+class StringExtensions {
+  @ExtensionMethod
+  static size(str: string) {
+    return str.length;
+  }
+}
+
+declare global {
+  interface String {
+    size(): number;
+  }
+}
+
+'my-string'.size();
+```
+
+Easy enough, right? If you already know this feature, I'm sure you miss it in Javascript/Typescript, but with this library no-more!
+
+Also, this library works with two modes:
+
+- AST Transformer
+- Proxy reference
+
+Each of them are explained below and you can use the one that fits you better!
+
+# AST Transformer mode (experimental)
+
+In this mode, everything is done at transpiling time, making you able to access each of the extensions methods just by importing them where you need, like this:
+
+```typescript
+import './string-extensions';
+
+console.log('my-strign'.size());
+```
+
+Due to typescript limitation, not only you have to declare the extension method, but also the additional methods to merge into the type you want to add them, like the example more above. Now, to apply this transformation, you need to use a compiler command that supports adding ast transformers to the pipe. We suggest you to use **nest build.**
+
+You'll have to add the following plugin to your **nest-cli.json**:
+
+```typescript
+    "plugins": [
+      "extension-methods/plugin"
+    ],
+```
+
+That's it! this is enough to get the extensions you want!
+
+# Proxy reference mode
+
+In this mode, you can create 'proxy references' for your objects and access many methods that actually doesn't exists in them!
 This is pretty useful in the following scenarios:
 
 - where you need to create a method that returns an object with a lot of methods, but the code that'll use that result will only access a few of them;
@@ -15,8 +69,6 @@ This is pretty useful in the following scenarios:
 
 Depending on the number of methods you'll proxy through **extension-methods**, you can achieve a 99% faster operation than a simple **new Class()**
 <br>
-
-## How to use it
 
 First, you need to obtain your extension object, like this:
 <br>
@@ -116,5 +168,5 @@ And that's it, it'll just work!
 ## Important
 
 - If some method exists in the original object and also is declared in the Extender, the original method will be used;
-- **extension-methods** can't be used with primitive values like **string**, **number** and **boolean**;
+- **extension-methods** can't be used in proxy mode with primitive values like **string**, **number** and **boolean**, but it'll work with the ast mode!
 - **extend** will naturally returns a type that is a join between the real object and the extension methods declared, but it is recommendable, if you want a cleaner type or to return such value as a result of a function, to create an interface that represent it, as you can see in the examples above;

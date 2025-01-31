@@ -4,7 +4,8 @@
   "description": "This library allows you to create extension methods for a given object the fatest way",
   "main": "dist/index.js",
   "files": [
-    "dist"
+    "dist",
+    "plugin.js"
   ],
   "scripts": {
     "test": "mocha",
@@ -32,12 +33,17 @@
     "extension",
     "methods",
     "extended",
-    "static extension methods"
+    "static extension methods",
+    "ast",
+    "transformer"
   ],
   "author": "Thiago O Santos <tos.oliveira@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "@codibre/confs": "0.0.6"
+    "@codibre/confs": "0.0.6",
+    "@types/node": "^22.10.7",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
   },
   "directories": {
     "test": "test"
